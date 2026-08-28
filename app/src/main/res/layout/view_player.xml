@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    A texture_view surface is used instead of PlayerView's default surface_view.
+    SurfaceView renders through its own independent surface that the system
+    compositor positions outside Compose's normal layout/draw pass, so it can
+    fall out of sync with the AndroidView's actual bounds whenever a layout
+    change happens after the first frame (e.g. an HLS adaptive quality switch,
+    or the controller overlay showing/hiding) — the video then appears cropped
+    or shifted. TextureView draws as a regular View bitmap that Compose's
+    layout system tracks directly, which avoids that desync.
+-->
+<androidx.media3.ui.PlayerView xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/player_view"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    app:surface_type="texture_view" />

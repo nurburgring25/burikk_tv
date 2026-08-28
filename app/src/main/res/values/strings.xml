@@ -1,0 +1,27 @@
+<resources>
+    <string name="app_name">Burikk TV</string>
+    <string name="app_tagline">IPTV Streaming</string>
+    <string name="favorites">Favorit</string>
+    <string name="loading_playlist">Memuat daftar channel…</string>
+    <string name="error_loading">Gagal memuat daftar channel. Periksa koneksi internet Anda.</string>
+    <string name="retry">Coba Lagi</string>
+    <string name="no_favorites">Belum ada channel favorit.\nTekan tombol favorit pada channel untuk menambahkannya.</string>
+    <string name="no_channels">Tidak ada channel di kategori ini.</string>
+    <string name="add_to_favorites">Tambah ke favorit</string>
+    <string name="remove_from_favorites">Hapus dari favorit</string>
+    <string name="player_loading">Menghubungkan ke stream…</string>
+    <string name="player_error">Stream tidak dapat diputar. Coba channel lain.</string>
+    <string name="countries">Negara</string>
+    <string name="refresh">Segarkan</string>
+    <string name="search">Cari Channel</string>
+    <string name="search_placeholder">Ketik nama channel…</string>
+    <string name="search_empty_query">Ketik untuk mencari channel dari semua negara.</string>
+    <string name="search_no_results">Channel tidak ditemukan.</string>
+    <string name="manage_playlists">Tambah Playlist</string>
+    <string name="manage_playlists_title">Playlist Kustom</string>
+    <string name="manage_playlists_description">Tempel URL playlist M3U/M3U8 dari sumber yang sah (misal langganan IPTV Anda sendiri). Channel-nya akan otomatis ditambahkan ke daftar negara.</string>
+    <string name="manage_playlists_placeholder">https://contoh.com/playlist.m3u</string>
+    <string name="manage_playlists_add">Tambah</string>
+    <string name="manage_playlists_empty">Belum ada playlist kustom yang ditambahkan.</string>
+    <string name="manage_playlists_remove">Hapus</string>
+</resources>
