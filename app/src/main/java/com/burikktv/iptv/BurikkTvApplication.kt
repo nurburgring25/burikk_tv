@@ -4,6 +4,7 @@ import android.app.Application
 import com.burikktv.iptv.data.CustomPlaylistRepository
 import com.burikktv.iptv.data.EpgRepository
 import com.burikktv.iptv.data.FavoritesRepository
+import com.burikktv.iptv.data.LastWatchedRepository
 import com.burikktv.iptv.data.PlaylistRepository
 
 class BurikkTvApplication : Application() {
@@ -12,4 +13,5 @@ class BurikkTvApplication : Application() {
     val favoritesRepository: FavoritesRepository by lazy { FavoritesRepository(this) }
     val customPlaylistRepository: CustomPlaylistRepository by lazy { CustomPlaylistRepository(this) }
     val epgRepository: EpgRepository by lazy { EpgRepository(this) }
+    val lastWatchedRepository: LastWatchedRepository by lazy { LastWatchedRepository(this) }
 }

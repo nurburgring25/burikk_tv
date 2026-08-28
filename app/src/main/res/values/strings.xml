@@ -10,7 +10,8 @@
     <string name="add_to_favorites">Tambah ke favorit</string>
     <string name="remove_from_favorites">Hapus dari favorit</string>
     <string name="player_loading">Menghubungkan ke stream…</string>
-    <string name="player_error">Stream tidak dapat diputar. Coba channel lain.</string>
+    <string name="view_error_detail">Lihat Detail Error</string>
+    <string name="error_detail_title">Detail Error</string>
     <string name="countries">Negara</string>
     <string name="refresh">Segarkan</string>
     <string name="search">Cari Channel</string>
@@ -24,4 +25,5 @@
     <string name="manage_playlists_add">Tambah</string>
     <string name="manage_playlists_empty">Belum ada playlist kustom yang ditambahkan.</string>
     <string name="manage_playlists_remove">Hapus</string>
+    <string name="change_channel">Ganti Channel</string>
 </resources>

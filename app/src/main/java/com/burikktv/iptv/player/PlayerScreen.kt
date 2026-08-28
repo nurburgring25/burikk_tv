@@ -1,25 +1,37 @@
 package com.burikktv.iptv.player
 
 import android.annotation.SuppressLint
-import android.os.Bundle
 import android.view.LayoutInflater
-import androidx.activity.ComponentActivity
-import androidx.activity.compose.setContent
+import android.view.View
+import android.widget.TextView
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.C
@@ -34,61 +46,11 @@ import androidx.media3.exoplayer.drm.FrameworkMediaDrm
 import androidx.media3.exoplayer.drm.LocalMediaDrmCallback
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.PlayerView
-import androidx.compose.material3.CircularProgressIndicator
+import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.MaterialTheme
+import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import com.burikktv.iptv.R
-import com.burikktv.iptv.ui.theme.BurikkTvTheme
-
-class PlayerActivity : ComponentActivity() {
-
-    override fun onCreate(savedInstanceState: Bundle?) {
-        super.onCreate(savedInstanceState)
-        val title = intent.getStringExtra(EXTRA_TITLE).orEmpty()
-        val url = intent.getStringExtra(EXTRA_URL)
-        val userAgent = intent.getStringExtra(EXTRA_USER_AGENT)
-        val referrer = intent.getStringExtra(EXTRA_REFERRER)
-        val clearKeyLicenseJson = intent.getStringExtra(EXTRA_CLEAR_KEY_LICENSE_JSON)
-        val widevineLicenseUrl = intent.getStringExtra(EXTRA_WIDEVINE_LICENSE_URL)
-        val widevineHeaders = intent.getBundleExtra(EXTRA_WIDEVINE_LICENSE_HEADERS)
-            ?.let { bundle -> bundle.keySet().associateWith { bundle.getString(it).orEmpty() } }
-            .orEmpty()
-        val forceDash = intent.getBooleanExtra(EXTRA_FORCE_DASH, false)
-        val nowPlaying = intent.getStringExtra(EXTRA_NOW_PLAYING)
-
-        setContent {
-            BurikkTvTheme {
-                if (url != null) {
-                    PlayerScreen(
-                        title = title,
-                        url = url,
-                        userAgent = userAgent,
-                        referrer = referrer,
-                        clearKeyLicenseJson = clearKeyLicenseJson,
-                        widevineLicenseUrl = widevineLicenseUrl,
-                        widevineHeaders = widevineHeaders,
-                        forceDash = forceDash,
-                        nowPlaying = nowPlaying,
-                    )
-                } else {
-                    finish()
-                }
-            }
-        }
-    }
-
-    companion object {
-        const val EXTRA_TITLE = "extra_title"
-        const val EXTRA_URL = "extra_url"
-        const val EXTRA_USER_AGENT = "extra_user_agent"
-        const val EXTRA_REFERRER = "extra_referrer"
-        const val EXTRA_CLEAR_KEY_LICENSE_JSON = "extra_clear_key_license_json"
-        const val EXTRA_WIDEVINE_LICENSE_URL = "extra_widevine_license_url"
-        const val EXTRA_WIDEVINE_LICENSE_HEADERS = "extra_widevine_license_headers"
-        const val EXTRA_FORCE_DASH = "extra_force_dash"
-        const val EXTRA_NOW_PLAYING = "extra_now_playing"
-    }
-}
 
 private sealed interface PlaybackUiState {
     data object Buffering : PlaybackUiState
@@ -98,7 +60,7 @@ private sealed interface PlaybackUiState {
 
 @SuppressLint("OpaqueUnitKey")
 @Composable
-private fun PlayerScreen(
+fun PlayerScreen(
     title: String,
     url: String,
     userAgent: String?,
@@ -108,9 +70,13 @@ private fun PlayerScreen(
     widevineHeaders: Map<String, String>,
     forceDash: Boolean,
     nowPlaying: String?,
+    onChangeChannel: () -> Unit,
+    modifier: Modifier = Modifier,
+    showChangeChannelButton: Boolean = true,
 ) {
     val context = LocalContext.current
-    var uiState by remember { mutableStateOf<PlaybackUiState>(PlaybackUiState.Buffering) }
+    var uiState by remember(url) { mutableStateOf<PlaybackUiState>(PlaybackUiState.Buffering) }
+    val changeChannelFocusRequester = remember { FocusRequester() }
 
     val exoPlayer = remember(url) {
         val httpDataSourceFactory = DefaultHttpDataSource.Factory().apply {
@@ -202,7 +168,7 @@ private fun PlayerScreen(
         onDispose { exoPlayer.release() }
     }
 
-    Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
+    Box(modifier = modifier.fillMaxSize().background(Color.Black)) {
         AndroidView(
             factory = { ctx ->
                 // Inflated so the XML-only `app:surface_type="texture_view"`
@@ -216,6 +182,32 @@ private fun PlayerScreen(
                     controllerAutoShow = true
                 }
             },
+            update = { view ->
+                view.player = exoPlayer
+                // On error, NoSignalScreen (and its own buttons) is drawn on
+                // top of this PlayerView, but drawing over it doesn't stop
+                // the native controller underneath from still taking D-pad
+                // focus and clicks — confirmed by the settings (gear) popup
+                // opening from a remote press that should have landed on our
+                // Compose buttons instead. Turning the controller off
+                // entirely (not just hiding it) removes it from the focus
+                // chain, so there's nothing left to compete with those
+                // buttons for input.
+                view.useController = uiState !is PlaybackUiState.Error
+
+                // res/layout/view_player_controller.xml (wired up via
+                // app:controller_layout_id in view_player.xml) adds this
+                // TextView into PlayerView's own native control row, right
+                // next to the settings button, so it's part of the same
+                // Android focus group as play/pause/etc. — D-pad navigation
+                // reaches it exactly like any other control button, with no
+                // Compose-side focus wiring needed.
+                view.findViewById<TextView>(R.id.exo_change_channel)?.apply {
+                    text = context.getString(R.string.change_channel)
+                    visibility = if (showChangeChannelButton) View.VISIBLE else View.GONE
+                    setOnClickListener { onChangeChannel() }
+                }
+            },
             modifier = Modifier.fillMaxSize(),
         )
 
@@ -226,7 +218,7 @@ private fun PlayerScreen(
                     .background(Color.Black.copy(alpha = 0.55f))
                     .padding(horizontal = 16.dp, vertical = 10.dp),
             ) {
-                Text(text = title, color = Color.White, fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold)
+                Text(text = title, color = Color.White, fontWeight = FontWeight.SemiBold)
                 Text(text = nowPlaying, color = Color.White.copy(alpha = 0.8f))
             }
         }
@@ -234,6 +226,7 @@ private fun PlayerScreen(
         when (val state = uiState) {
             is PlaybackUiState.Buffering -> {
                 Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
                     modifier = Modifier.align(Alignment.Center).padding(24.dp),
                 ) {
                     CircularProgressIndicator()
@@ -245,14 +238,116 @@ private fun PlayerScreen(
                 }
             }
             is PlaybackUiState.Error -> {
-                Text(
-                    text = stringResCompat(R.string.player_error),
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.align(Alignment.Center).padding(24.dp),
-                )
+                var showErrorDetail by remember(state.message) { mutableStateOf(false) }
+                BackHandler(enabled = showErrorDetail) { showErrorDetail = false }
+
+                NoSignalScreen(modifier = Modifier.fillMaxSize())
+
+                // PlayerView's native controller (and the "Ganti Channel"
+                // button embedded in it) is fully disabled during an error —
+                // see the `useController` line above — so this is a separate
+                // Compose button just for this state, with its own explicit
+                // focus grab since nothing else here has focus to hand off
+                // from.
+                if (showChangeChannelButton) {
+                    LaunchedEffect(state.message) {
+                        runCatching { changeChannelFocusRequester.requestFocus() }
+                    }
+                    ChangeChannelButton(onClick = onChangeChannel, focusRequester = changeChannelFocusRequester)
+                }
+
+                Surface(
+                    onClick = { showErrorDetail = true },
+                    shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(8.dp)),
+                    colors = ClickableSurfaceDefaults.colors(
+                        containerColor = Color.Black.copy(alpha = 0.7f),
+                        contentColor = Color.White,
+                    ),
+                    modifier = Modifier
+                        .align(Alignment.BottomCenter)
+                        .padding(bottom = 32.dp)
+                        .pointerInput(state.message) {
+                            detectTapGestures(onTap = { showErrorDetail = true })
+                        },
+                ) {
+                    Text(
+                        text = stringResCompat(R.string.view_error_detail),
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                    )
+                }
+
+                if (showErrorDetail) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .background(Color.Black.copy(alpha = 0.75f))
+                            .pointerInput(Unit) {
+                                detectTapGestures(onTap = { showErrorDetail = false })
+                            },
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Surface(
+                            onClick = {},
+                            shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(12.dp)),
+                            colors = ClickableSurfaceDefaults.colors(
+                                containerColor = MaterialTheme.colorScheme.surface,
+                                contentColor = MaterialTheme.colorScheme.onSurface,
+                            ),
+                            modifier = Modifier
+                                .fillMaxWidth(0.6f)
+                                .padding(24.dp)
+                                .pointerInput(Unit) { detectTapGestures(onTap = {}) },
+                        ) {
+                            Column(modifier = Modifier.padding(24.dp)) {
+                                Text(
+                                    text = stringResCompat(R.string.error_detail_title),
+                                    fontWeight = FontWeight.Bold,
+                                )
+                                Text(
+                                    text = state.message,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    modifier = Modifier
+                                        .padding(top = 12.dp)
+                                        .heightIn(max = 280.dp)
+                                        .verticalScroll(rememberScrollState()),
+                                )
+                            }
+                        }
+                    }
+                }
             }
             is PlaybackUiState.Ready -> Unit
         }
+    }
+}
+
+// Only used for the Error state (see the useController line above), where
+// PlayerView's own control row — and the native "Ganti Channel" button
+// embedded in it via view_player_controller.xml — is disabled entirely.
+@Composable
+private fun androidx.compose.foundation.layout.BoxScope.ChangeChannelButton(
+    onClick: () -> Unit,
+    focusRequester: FocusRequester,
+) {
+    Surface(
+        onClick = onClick,
+        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(8.dp)),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = Color.Black.copy(alpha = 0.6f),
+            contentColor = Color.White,
+        ),
+        modifier = Modifier
+            .align(Alignment.BottomEnd)
+            .padding(end = 24.dp, bottom = 14.dp)
+            .focusRequester(focusRequester)
+            .pointerInput(onClick) {
+                detectTapGestures(onTap = { onClick() })
+            },
+    ) {
+        Text(
+            text = stringResCompat(R.string.change_channel),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+        )
     }
 }
 

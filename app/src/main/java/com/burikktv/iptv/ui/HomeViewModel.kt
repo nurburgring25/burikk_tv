@@ -7,6 +7,7 @@ import com.burikktv.iptv.BurikkTvApplication
 import com.burikktv.iptv.data.CustomPlaylistRepository
 import com.burikktv.iptv.data.EpgRepository
 import com.burikktv.iptv.data.FavoritesRepository
+import com.burikktv.iptv.data.LastWatchedRepository
 import com.burikktv.iptv.data.PlaylistRepository
 import com.burikktv.iptv.data.model.Channel
 import com.burikktv.iptv.data.model.EpgProgramme
@@ -14,6 +15,7 @@ import com.burikktv.iptv.data.model.FAVORITES_KEY
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 
@@ -33,6 +35,7 @@ class HomeViewModel(
     private val favoritesRepository: FavoritesRepository,
     private val customPlaylistRepository: CustomPlaylistRepository,
     private val epgRepository: EpgRepository,
+    private val lastWatchedRepository: LastWatchedRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<HomeUiState>(HomeUiState.Loading)
@@ -131,6 +134,19 @@ class HomeViewModel(
         }
     }
 
+    /** One-shot read (not a StateFlow) so callers can tell "not saved yet"
+     * apart from "still loading the persisted value" — a StateFlow would need
+     * a placeholder initial value that's indistinguishable from "never watched
+     * anything", which would race the caller into always falling back to the
+     * first channel on every cold start. */
+    suspend fun getLastWatchedChannelId(): String? = lastWatchedRepository.lastWatchedChannelId.first()
+
+    fun saveLastWatched(channelId: String) {
+        viewModelScope.launch {
+            lastWatchedRepository.save(channelId)
+        }
+    }
+
     companion object {
         fun factory(app: BurikkTvApplication): ViewModelProvider.Factory =
             object : ViewModelProvider.Factory {
@@ -141,6 +157,7 @@ class HomeViewModel(
                         app.favoritesRepository,
                         app.customPlaylistRepository,
                         app.epgRepository,
+                        app.lastWatchedRepository,
                     ) as T
                 }
             }

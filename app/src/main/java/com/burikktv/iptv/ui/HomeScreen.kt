@@ -14,6 +14,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.CircularProgressIndicator
@@ -31,6 +32,9 @@ import com.burikktv.iptv.data.model.currentProgrammeTitle
 fun HomeScreen(
     viewModel: HomeViewModel,
     onPlayChannel: (Channel, String?) -> Unit,
+    modifier: Modifier = Modifier,
+    isOverlay: Boolean = false,
+    currentChannelId: String? = null,
 ) {
     val uiState by viewModel.uiState.collectAsState()
     val favoriteIds by viewModel.favoriteIds.collectAsState()
@@ -40,9 +44,11 @@ fun HomeScreen(
     val epgByChannelId by viewModel.epgByChannelId.collectAsState()
 
     Box(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxSize()
-            .background(MaterialTheme.colorScheme.background),
+            .background(
+                if (isOverlay) Color.Black.copy(alpha = 0.65f) else MaterialTheme.colorScheme.background,
+            ),
     ) {
         when (val state = uiState) {
             is HomeUiState.Loading -> LoadingContent()
@@ -91,6 +97,7 @@ fun HomeScreen(
                             onPlay = playChannel,
                             onToggleFavorite = { viewModel.toggleFavorite(it.id) },
                             epgByChannelId = epgByChannelId,
+                            compact = isOverlay,
                             modifier = Modifier.padding(start = 4.dp),
                         )
                     } else if (selectedKey == MANAGE_PLAYLISTS_KEY) {
@@ -105,19 +112,33 @@ fun HomeScreen(
                             FAVORITES_KEY, null -> favoriteChannels
                             else -> state.channelsByCountry[selectedKey].orEmpty()
                         }
-                        ChannelGrid(
-                            channels = currentChannels,
-                            favoriteIds = favoriteIds,
-                            onPlay = playChannel,
-                            onToggleFavorite = { viewModel.toggleFavorite(it.id) },
-                            emptyMessage = if (selectedKey == FAVORITES_KEY || selectedKey == null) {
-                                stringRes(R.string.no_favorites)
-                            } else {
-                                stringRes(R.string.no_channels)
-                            },
-                            epgByChannelId = epgByChannelId,
-                            modifier = Modifier.padding(start = 4.dp),
-                        )
+                        val emptyMessage = if (selectedKey == FAVORITES_KEY || selectedKey == null) {
+                            stringRes(R.string.no_favorites)
+                        } else {
+                            stringRes(R.string.no_channels)
+                        }
+                        if (isOverlay) {
+                            CompactChannelList(
+                                channels = currentChannels,
+                                favoriteIds = favoriteIds,
+                                onPlay = playChannel,
+                                onToggleFavorite = { viewModel.toggleFavorite(it.id) },
+                                emptyMessage = emptyMessage,
+                                epgByChannelId = epgByChannelId,
+                                currentChannelId = currentChannelId,
+                                modifier = Modifier.padding(start = 4.dp),
+                            )
+                        } else {
+                            ChannelGrid(
+                                channels = currentChannels,
+                                favoriteIds = favoriteIds,
+                                onPlay = playChannel,
+                                onToggleFavorite = { viewModel.toggleFavorite(it.id) },
+                                emptyMessage = emptyMessage,
+                                epgByChannelId = epgByChannelId,
+                                modifier = Modifier.padding(start = 4.dp),
+                            )
+                        }
                     }
                 }
             }

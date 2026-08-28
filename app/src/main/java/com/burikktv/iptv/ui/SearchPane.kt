@@ -39,6 +39,7 @@ fun SearchPane(
     onToggleFavorite: (Channel) -> Unit,
     modifier: Modifier = Modifier,
     epgByChannelId: Map<String, List<EpgProgramme>> = emptyMap(),
+    compact: Boolean = false,
 ) {
     val focusRequester = remember { FocusRequester() }
 
@@ -84,6 +85,14 @@ fun SearchPane(
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
+            compact -> CompactChannelList(
+                channels = results,
+                favoriteIds = favoriteIds,
+                onPlay = onPlay,
+                onToggleFavorite = onToggleFavorite,
+                epgByChannelId = epgByChannelId,
+                modifier = Modifier.fillMaxSize(),
+            )
             else -> ChannelGrid(
                 channels = results,
                 favoriteIds = favoriteIds,

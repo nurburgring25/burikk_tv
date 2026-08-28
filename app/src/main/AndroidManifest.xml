@@ -34,13 +34,6 @@
             </intent-filter>
         </activity>
 
-        <activity
-            android:name=".player.PlayerActivity"
-            android:exported="false"
-            android:screenOrientation="landscape"
-            android:launchMode="singleTop"
-            android:theme="@style/Theme.BurikkTv.Player" />
-
     </application>
 
 </manifest>
