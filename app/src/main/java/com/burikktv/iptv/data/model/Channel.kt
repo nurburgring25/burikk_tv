@@ -8,9 +8,6 @@ data class Channel(
     val userAgent: String?,
     val referrer: String?,
     val country: String,
-    /** The `tvg-id` attribute, used to match this channel against an EPG
-     * (electronic program guide) feed. Null when the playlist entry has none. */
-    val tvgId: String? = null,
     /** W3C Clear Key license JSON (`{"keys":[...],"type":"temporary"}`), parsed from
      * `#KODIPROP:inputstream.adaptive.license_key`. Null when the channel isn't DRM-protected. */
     val clearKeyLicenseJson: String? = null,

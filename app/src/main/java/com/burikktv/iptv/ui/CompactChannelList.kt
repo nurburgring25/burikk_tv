@@ -33,12 +33,10 @@ import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import coil3.compose.AsyncImage
 import com.burikktv.iptv.data.model.Channel
-import com.burikktv.iptv.data.model.EpgProgramme
-import com.burikktv.iptv.data.model.currentProgrammeTitle
 
 /**
- * Row-based channel listing (channel + now-playing per line) used instead of
- * [ChannelGrid]'s bigger thumbnail cards when the menu is shown as an overlay
+ * Row-based channel listing used instead of [ChannelGrid]'s bigger thumbnail
+ * cards when the menu is shown as an overlay
  * over the video — a dense list reads better than a thumbnail grid in the
  * narrower space a docked overlay panel leaves for content.
  */
@@ -50,7 +48,6 @@ fun CompactChannelList(
     onToggleFavorite: (Channel) -> Unit,
     modifier: Modifier = Modifier,
     emptyMessage: String = "",
-    epgByChannelId: Map<String, List<EpgProgramme>> = emptyMap(),
     currentChannelId: String? = null,
 ) {
     if (channels.isEmpty()) {
@@ -90,7 +87,6 @@ fun CompactChannelList(
                 channel = channel,
                 isFavorite = channel.id in favoriteIds,
                 isCurrent = isCurrent,
-                nowPlaying = epgByChannelId.currentProgrammeTitle(channel.tvgId),
                 onPlay = { onPlay(channel) },
                 onToggleFavorite = { onToggleFavorite(channel) },
                 modifier = if (isCurrent) Modifier.focusRequester(currentRowFocusRequester) else Modifier,
@@ -104,7 +100,6 @@ private fun CompactChannelRow(
     channel: Channel,
     isFavorite: Boolean,
     isCurrent: Boolean,
-    nowPlaying: String?,
     onPlay: () -> Unit,
     onToggleFavorite: () -> Unit,
     modifier: Modifier = Modifier,
@@ -163,15 +158,6 @@ private fun CompactChannelRow(
                     overflow = TextOverflow.Ellipsis,
                     fontWeight = FontWeight.SemiBold,
                 )
-                if (nowPlaying != null) {
-                    Text(
-                        text = nowPlaying,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(top = 2.dp),
-                    )
-                }
             }
             if (isCurrent) {
                 Text(

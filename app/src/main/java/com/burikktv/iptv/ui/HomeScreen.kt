@@ -26,12 +26,11 @@ import com.burikktv.iptv.data.model.Channel
 import com.burikktv.iptv.data.model.FAVORITES_KEY
 import com.burikktv.iptv.data.model.MANAGE_PLAYLISTS_KEY
 import com.burikktv.iptv.data.model.SEARCH_KEY
-import com.burikktv.iptv.data.model.currentProgrammeTitle
 
 @Composable
 fun HomeScreen(
     viewModel: HomeViewModel,
-    onPlayChannel: (Channel, String?) -> Unit,
+    onPlayChannel: (Channel) -> Unit,
     modifier: Modifier = Modifier,
     isOverlay: Boolean = false,
     currentChannelId: String? = null,
@@ -41,7 +40,6 @@ fun HomeScreen(
     val selectedKey by viewModel.selectedCountry.collectAsState()
     val searchQuery by viewModel.searchQuery.collectAsState()
     val customPlaylistUrls by viewModel.customPlaylistUrls.collectAsState()
-    val epgByChannelId by viewModel.epgByChannelId.collectAsState()
 
     Box(
         modifier = modifier
@@ -83,20 +81,16 @@ fun HomeScreen(
                         entries = entries,
                         selectedKey = selectedKey,
                         onSelect = viewModel::selectCountry,
+                        isOverlay = isOverlay,
                     )
-                    val playChannel: (Channel) -> Unit = { channel ->
-                        onPlayChannel(channel, epgByChannelId.currentProgrammeTitle(channel.tvgId))
-                    }
-
                     if (selectedKey == SEARCH_KEY) {
                         SearchPane(
                             query = searchQuery,
                             onQueryChange = viewModel::updateSearchQuery,
                             results = searchResults,
                             favoriteIds = favoriteIds,
-                            onPlay = playChannel,
+                            onPlay = onPlayChannel,
                             onToggleFavorite = { viewModel.toggleFavorite(it.id) },
-                            epgByChannelId = epgByChannelId,
                             compact = isOverlay,
                             modifier = Modifier.padding(start = 4.dp),
                         )
@@ -121,10 +115,9 @@ fun HomeScreen(
                             CompactChannelList(
                                 channels = currentChannels,
                                 favoriteIds = favoriteIds,
-                                onPlay = playChannel,
+                                onPlay = onPlayChannel,
                                 onToggleFavorite = { viewModel.toggleFavorite(it.id) },
                                 emptyMessage = emptyMessage,
-                                epgByChannelId = epgByChannelId,
                                 currentChannelId = currentChannelId,
                                 modifier = Modifier.padding(start = 4.dp),
                             )
@@ -132,10 +125,9 @@ fun HomeScreen(
                             ChannelGrid(
                                 channels = currentChannels,
                                 favoriteIds = favoriteIds,
-                                onPlay = playChannel,
+                                onPlay = onPlayChannel,
                                 onToggleFavorite = { viewModel.toggleFavorite(it.id) },
                                 emptyMessage = emptyMessage,
-                                epgByChannelId = epgByChannelId,
                                 modifier = Modifier.padding(start = 4.dp),
                             )
                         }

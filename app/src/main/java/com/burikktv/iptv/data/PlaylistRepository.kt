@@ -14,9 +14,16 @@ import java.io.File
 import java.util.concurrent.TimeUnit
 
 /**
- * Fetches the community-maintained iptv-org playlist (grouped by country) and
- * the matching country flag metadata, with a disk cache so the app still has
- * something to show if the network is unavailable.
+ * Builds the channel list purely from the user's own custom playlists (added
+ * via "Tambah Playlist"), plus the community-maintained country flag lookup
+ * so `group-title` values that happen to be country names still get a flag
+ * emoji. This used to also fetch the full iptv-org global catalog
+ * (~14,000 channels across every country) automatically on every launch, but
+ * that catalog — several MB of text plus its parsed object graph — stayed
+ * resident in memory for the entire app session regardless of whether the
+ * user ever browsed it, which was a major fixed cost behind OutOfMemoryError
+ * crashes on Android TV boxes with a small heap. Custom playlists are
+ * usually a fraction of that size and are what the user actually asked for.
  */
 class PlaylistRepository(private val context: Context) {
 
@@ -25,54 +32,40 @@ class PlaylistRepository(private val context: Context) {
         .readTimeout(30, TimeUnit.SECONDS)
         .build()
 
-    private val playlistCacheFile: File get() = File(context.cacheDir, "playlist.m3u")
     private val flagsCacheFile: File get() = File(context.cacheDir, "flags.json")
 
     data class PlaylistResult(
         val channels: List<Channel>,
         val countryFlags: Map<String, String>,
-        val epgUrls: Set<String>,
         val fromCache: Boolean,
     )
 
     suspend fun load(customPlaylistUrls: Set<String> = emptySet()): Result<PlaylistResult> = withContext(Dispatchers.IO) {
         runCatching {
-            val playlistText = fetchWithCache(url = PLAYLIST_URL, cacheFile = playlistCacheFile)
             val flagsText = runCatching {
                 fetchWithCache(url = COUNTRIES_URL, cacheFile = flagsCacheFile)
             }.getOrNull()
 
-            val channels = M3UParser.parse(playlistText.text).toMutableList()
-            val epgUrls = M3UParser.extractEpgUrls(playlistText.text).toMutableSet()
-            var anyCustomFromCache = false
+            val channels = mutableListOf<Channel>()
+            var anyFromCache = false
             for (url in customPlaylistUrls) {
                 val cacheFile = File(context.cacheDir, "custom_${url.hashCode()}.m3u")
                 val fetched = runCatching { fetchWithCache(url = url, cacheFile = cacheFile) }.getOrNull()
                 if (fetched == null) continue
-                anyCustomFromCache = anyCustomFromCache || fetched.fromCache
-                epgUrls += M3UParser.extractEpgUrls(fetched.text)
-                // Custom playlists are rarely grouped by country name (usually by
-                // genre, or not grouped at all), so their original group-title would
-                // otherwise pollute the country list with unrelated entries. All
-                // custom channels are surfaced under one dedicated group instead.
-                val customChannels = M3UParser.parse(fetched.text).map { channel ->
-                    channel.copy(country = CUSTOM_GROUP_NAME)
-                }
-                channels += customChannels
+                anyFromCache = anyFromCache || fetched.fromCache
+                channels += M3UParser.parse(fetched.text)
             }
             val flags = flagsText?.let { parseFlags(it.text) } ?: emptyMap()
 
-            // A custom playlist can legitimately overlap with the base playlist (or
-            // with another custom playlist) and reuse the exact same name+URL pair,
-            // which would otherwise produce two channels sharing the same id and
-            // crash any Compose lazy list keyed by it.
+            // Two custom playlists can legitimately overlap and reuse the same
+            // name+URL pair, which would otherwise produce two channels sharing
+            // the same id and crash any Compose lazy list keyed by it.
             val deduped = channels.distinctBy { it.id }
 
             PlaylistResult(
                 channels = deduped,
                 countryFlags = flags,
-                epgUrls = epgUrls,
-                fromCache = playlistText.fromCache || anyCustomFromCache,
+                fromCache = anyFromCache,
             )
         }
     }
@@ -116,9 +109,7 @@ class PlaylistRepository(private val context: Context) {
     }
 
     companion object {
-        private const val PLAYLIST_URL = "https://iptv-org.github.io/iptv/index.country.m3u"
         private const val COUNTRIES_URL = "https://iptv-org.github.io/api/countries.json"
-        const val CUSTOM_GROUP_NAME = "Channel Kustom"
     }
 }
 

@@ -11,6 +11,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -35,12 +36,15 @@ fun CountryListPane(
     selectedKey: String?,
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
+    isOverlay: Boolean = false,
 ) {
     Box(
         modifier = modifier
             .fillMaxHeight()
             .width(300.dp)
-            .background(MaterialTheme.colorScheme.surface),
+            .background(
+                if (isOverlay) Color.Black.copy(alpha = 0.65f) else MaterialTheme.colorScheme.background,
+            )
     ) {
         LazyColumn(modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
             items(entries, key = { it.key }) { entry ->

@@ -5,12 +5,10 @@ import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.burikktv.iptv.BurikkTvApplication
 import com.burikktv.iptv.data.CustomPlaylistRepository
-import com.burikktv.iptv.data.EpgRepository
 import com.burikktv.iptv.data.FavoritesRepository
 import com.burikktv.iptv.data.LastWatchedRepository
 import com.burikktv.iptv.data.PlaylistRepository
 import com.burikktv.iptv.data.model.Channel
-import com.burikktv.iptv.data.model.EpgProgramme
 import com.burikktv.iptv.data.model.FAVORITES_KEY
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -34,17 +32,11 @@ class HomeViewModel(
     private val playlistRepository: PlaylistRepository,
     private val favoritesRepository: FavoritesRepository,
     private val customPlaylistRepository: CustomPlaylistRepository,
-    private val epgRepository: EpgRepository,
     private val lastWatchedRepository: LastWatchedRepository,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow<HomeUiState>(HomeUiState.Loading)
     val uiState: StateFlow<HomeUiState> = _uiState
-
-    /** Programmes keyed by `tvg-id`, filled in once the EPG feed(s) finish
-     * loading in the background — channel browsing never waits on this. */
-    private val _epgByChannelId = MutableStateFlow<Map<String, List<EpgProgramme>>>(emptyMap())
-    val epgByChannelId: StateFlow<Map<String, List<EpgProgramme>>> = _epgByChannelId
 
     val favoriteIds: StateFlow<Set<String>> = favoritesRepository.favoriteIds
         .stateIn(viewModelScope, SharingStarted.Eagerly, emptySet())
@@ -90,21 +82,10 @@ class HomeViewModel(
                     if (_selectedCountry.value == null) {
                         _selectedCountry.value = FAVORITES_KEY
                     }
-                    loadEpg(result.epgUrls)
                 }
                 .onFailure { error ->
                     _uiState.value = HomeUiState.Error(error.message ?: "Terjadi kesalahan")
                 }
-        }
-    }
-
-    private fun loadEpg(epgUrls: Set<String>) {
-        if (epgUrls.isEmpty()) {
-            _epgByChannelId.value = emptyMap()
-            return
-        }
-        viewModelScope.launch {
-            _epgByChannelId.value = runCatching { epgRepository.load(epgUrls) }.getOrDefault(emptyMap())
         }
     }
 
@@ -156,7 +137,6 @@ class HomeViewModel(
                         app.playlistRepository,
                         app.favoritesRepository,
                         app.customPlaylistRepository,
-                        app.epgRepository,
                         app.lastWatchedRepository,
                     ) as T
                 }

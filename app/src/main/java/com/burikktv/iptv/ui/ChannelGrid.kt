@@ -28,8 +28,6 @@ import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import coil3.compose.AsyncImage
 import com.burikktv.iptv.data.model.Channel
-import com.burikktv.iptv.data.model.EpgProgramme
-import com.burikktv.iptv.data.model.currentProgrammeTitle
 
 @Composable
 fun ChannelGrid(
@@ -39,7 +37,6 @@ fun ChannelGrid(
     onToggleFavorite: (Channel) -> Unit,
     modifier: Modifier = Modifier,
     emptyMessage: String = "",
-    epgByChannelId: Map<String, List<EpgProgramme>> = emptyMap(),
 ) {
     if (channels.isEmpty()) {
         Box(modifier = modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -59,7 +56,6 @@ fun ChannelGrid(
             ChannelCard(
                 channel = channel,
                 isFavorite = channel.id in favoriteIds,
-                nowPlaying = epgByChannelId.currentProgrammeTitle(channel.tvgId),
                 onPlay = { onPlay(channel) },
                 onToggleFavorite = { onToggleFavorite(channel) },
             )
@@ -71,7 +67,6 @@ fun ChannelGrid(
 private fun ChannelCard(
     channel: Channel,
     isFavorite: Boolean,
-    nowPlaying: String?,
     onPlay: () -> Unit,
     onToggleFavorite: () -> Unit,
 ) {
@@ -134,15 +129,6 @@ private fun ChannelCard(
                     overflow = TextOverflow.Ellipsis,
                     fontWeight = FontWeight.SemiBold,
                 )
-                if (nowPlaying != null) {
-                    Text(
-                        text = nowPlaying,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(top = 2.dp),
-                    )
-                }
             }
         }
     }

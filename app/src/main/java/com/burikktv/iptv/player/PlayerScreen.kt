@@ -3,6 +3,7 @@ package com.burikktv.iptv.player
 import android.annotation.SuppressLint
 import android.view.LayoutInflater
 import android.view.View
+import android.view.ViewGroup
 import android.widget.TextView
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
@@ -40,6 +41,7 @@ import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.datasource.DefaultHttpDataSource
+import androidx.media3.exoplayer.DefaultLoadControl
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.drm.DefaultDrmSessionManager
 import androidx.media3.exoplayer.drm.FrameworkMediaDrm
@@ -61,7 +63,6 @@ private sealed interface PlaybackUiState {
 @SuppressLint("OpaqueUnitKey")
 @Composable
 fun PlayerScreen(
-    title: String,
     url: String,
     userAgent: String?,
     referrer: String?,
@@ -69,7 +70,6 @@ fun PlayerScreen(
     widevineLicenseUrl: String?,
     widevineHeaders: Map<String, String>,
     forceDash: Boolean,
-    nowPlaying: String?,
     onChangeChannel: () -> Unit,
     modifier: Modifier = Modifier,
     showChangeChannelButton: Boolean = true,
@@ -101,7 +101,24 @@ fun PlayerScreen(
 
         val mediaItem = MediaItem.Builder()
             .setUri(url)
-            .apply { if (forceDash) setMimeType(MimeTypes.APPLICATION_MPD) }
+            .apply {
+                // Some IPTV sources put ".m3u8" in the URL *fragment*
+                // (…?shk_cid=hdgd04#.m3u8) rather than the path, as a hint
+                // for players that sniff the extension client-side. The
+                // fragment is never sent to the server and isn't part of the
+                // last path segment ExoPlayer's own extension-based sniffing
+                // looks at, so a URL like that gets misread as a generic
+                // media file (whatever the actual path extension is, e.g.
+                // ".php") and handed to the plain container extractors,
+                // which can't parse an HLS text playlist and fail with
+                // UnrecognizedInputFormatException — even though the stream
+                // itself is fine (confirmed by VLC, which sniffs content
+                // rather than trusting the URL). Every entry here is from an
+                // M3U/IPTV playlist, which in practice is always HLS unless
+                // explicitly tagged as DASH, so it's set explicitly instead
+                // of leaving it to extension sniffing.
+                setMimeType(if (forceDash) MimeTypes.APPLICATION_MPD else MimeTypes.APPLICATION_M3U8)
+            }
             .apply {
                 // Unlike Clear Key, Widevine has no embedded key to hand ExoPlayer
                 // directly — it's just a license server URL (plus optional auth
@@ -123,6 +140,28 @@ fun PlayerScreen(
 
         ExoPlayer.Builder(context)
             .setMediaSourceFactory(mediaSourceFactory)
+            .setLoadControl(
+                // The default LoadControl targets up to 50s of buffered
+                // media with no byte-size cap — for a live channel that's
+                // pure downside (extra latency, no seek/rewatch benefit),
+                // and on a low-RAM Android TV box it's what was actually
+                // driving an OutOfMemoryError: a high-bitrate H.265-in-TS
+                // stream buffering that many seconds ahead can need tens of
+                // MB of encoded samples in memory, which doesn't fit in some
+                // OEM TV boxes' ~128MB per-app heap. Both a much shorter
+                // buffer window and an explicit byte ceiling are set so
+                // memory use stays bounded regardless of the stream's
+                // bitrate/codec, not just its duration.
+                DefaultLoadControl.Builder()
+                    .setBufferDurationsMs(
+                        /* minBufferMs= */ 6_000,
+                        /* maxBufferMs= */ 12_000,
+                        /* bufferForPlaybackMs= */ 1_000,
+                        /* bufferForPlaybackAfterRebufferMs= */ 2_000,
+                    )
+                    .setTargetBufferBytes(10 * 1024 * 1024)
+                    .build(),
+            )
             .build()
             .apply {
                 // Switching between this HLS stream's bitrate renditions (adaptive
@@ -180,6 +219,35 @@ fun PlayerScreen(
                     player = exoPlayer
                     useController = true
                     controllerAutoShow = true
+                    // Focusability itself (not just when to call
+                    // requestFocus) is set in `update`, below — see the
+                    // comment there for why it needs to be conditional.
+                    // The controller auto-hides by setting its whole button
+                    // row GONE, which silently drops focus off whatever
+                    // button held it (e.g. play/pause) — nothing else claims
+                    // it afterward. The next OK press then lands on no
+                    // focused view and does nothing; only a directional press
+                    // (Up) triggers Android's focus-search to find this
+                    // PlayerView and land on it, so OK only works on the
+                    // press *after* that. Reclaiming focus on this root view
+                    // the instant the controller hides means it's already
+                    // holding focus for the next press, so a single OK both
+                    // re-shows the controller and works every time.
+                    // Guarded on `useController` (rather than reclaiming focus
+                    // unconditionally): this same visibility callback also
+                    // fires when `useController` is explicitly turned off for
+                    // the Error state below, and reclaiming focus on the
+                    // PlayerView then would pull D-pad focus away from the
+                    // Compose "Ganti Channel"/"Lihat Detail Error" buttons
+                    // drawn on top of it — the exact focus-stealing bug the
+                    // `useController` toggle exists to prevent.
+                    setControllerVisibilityListener(
+                        PlayerView.ControllerVisibilityListener { visibility ->
+                            if (visibility != View.VISIBLE && useController) {
+                                requestFocus()
+                            }
+                        },
+                    )
                 }
             },
             update = { view ->
@@ -194,6 +262,50 @@ fun PlayerScreen(
                 // chain, so there's nothing left to compete with those
                 // buttons for input.
                 view.useController = uiState !is PlaybackUiState.Error
+
+                // Whether this native view (and its controller's own buttons
+                // — play/pause, settings, "Ganti Channel", etc.) should
+                // participate in D-pad focus at all. Toggling isFocusable on
+                // the PlayerView root alone isn't enough: PlayerView is a
+                // ViewGroup, and its controller's individual buttons are
+                // independently focusable regardless of the root's own flag,
+                // so blocking descendant focus explicitly is required too.
+                // This has to be false — not just "don't proactively focus
+                // it" — whenever the channel overlay is showing on top of it
+                // (showChangeChannelButton false) or during Error, otherwise
+                // Android's own focus-search can still land on one of those
+                // buttons on its own. That's exactly what was happening when
+                // selecting a channel from the overlay that ends up failing:
+                // useController is still true through the brief Buffering
+                // phase before the error arrives, so the controller's
+                // buttons are live and focusable for that window, stealing
+                // focus from the overlay's channel list before Error even
+                // hides them.
+                val shouldHoldFocus = showChangeChannelButton && uiState !is PlaybackUiState.Error
+                if (view.isFocusable != shouldHoldFocus) {
+                    view.isFocusable = shouldHoldFocus
+                    view.isFocusableInTouchMode = shouldHoldFocus
+                    view.descendantFocusability = if (shouldHoldFocus) {
+                        ViewGroup.FOCUS_BEFORE_DESCENDANTS
+                    } else {
+                        ViewGroup.FOCUS_BLOCK_DESCENDANTS
+                    }
+                    if (!shouldHoldFocus && view.hasFocus()) {
+                        view.clearFocus()
+                    }
+                }
+                // Without this, nothing actually holds D-pad focus when the
+                // player screen first appears (or right after the channel
+                // overlay closes), so the first OK press is spent just
+                // moving focus onto this view instead of reaching
+                // PlayerView's key handling — the controller only shows up
+                // on a *second* press (e.g. after pressing Up to move focus
+                // here first). Proactively claiming focus whenever this is
+                // the active surface means a single OK press both focuses
+                // and shows the controller at once.
+                if (shouldHoldFocus && !view.hasFocus()) {
+                    view.requestFocus()
+                }
 
                 // res/layout/view_player_controller.xml (wired up via
                 // app:controller_layout_id in view_player.xml) adds this
@@ -210,18 +322,6 @@ fun PlayerScreen(
             },
             modifier = Modifier.fillMaxSize(),
         )
-
-        if (!nowPlaying.isNullOrBlank()) {
-            Column(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .background(Color.Black.copy(alpha = 0.55f))
-                    .padding(horizontal = 16.dp, vertical = 10.dp),
-            ) {
-                Text(text = title, color = Color.White, fontWeight = FontWeight.SemiBold)
-                Text(text = nowPlaying, color = Color.White.copy(alpha = 0.8f))
-            }
-        }
 
         when (val state = uiState) {
             is PlaybackUiState.Buffering -> {

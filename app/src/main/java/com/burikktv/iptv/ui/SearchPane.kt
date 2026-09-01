@@ -27,7 +27,6 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Text
 import com.burikktv.iptv.R
 import com.burikktv.iptv.data.model.Channel
-import com.burikktv.iptv.data.model.EpgProgramme
 
 @Composable
 fun SearchPane(
@@ -38,7 +37,6 @@ fun SearchPane(
     onPlay: (Channel) -> Unit,
     onToggleFavorite: (Channel) -> Unit,
     modifier: Modifier = Modifier,
-    epgByChannelId: Map<String, List<EpgProgramme>> = emptyMap(),
     compact: Boolean = false,
 ) {
     val focusRequester = remember { FocusRequester() }
@@ -90,7 +88,6 @@ fun SearchPane(
                 favoriteIds = favoriteIds,
                 onPlay = onPlay,
                 onToggleFavorite = onToggleFavorite,
-                epgByChannelId = epgByChannelId,
                 modifier = Modifier.fillMaxSize(),
             )
             else -> ChannelGrid(
@@ -98,7 +95,6 @@ fun SearchPane(
                 favoriteIds = favoriteIds,
                 onPlay = onPlay,
                 onToggleFavorite = onToggleFavorite,
-                epgByChannelId = epgByChannelId,
                 modifier = Modifier.fillMaxSize(),
             )
         }

@@ -18,19 +18,6 @@ object M3UParser {
     private val vlcOptRegex = Regex("""^#EXTVLCOPT:(\S+?)=(.*)$""", RegexOption.IGNORE_CASE)
     private val kodiPropRegex = Regex("""^#KODIPROP:(\S+?)=(.*)$""", RegexOption.IGNORE_CASE)
     private val hexPairRegex = Regex("""^[0-9a-fA-F]+:[0-9a-fA-F]+$""")
-    private val epgUrlRegex = Regex("""(?:x-tvg-url|url-tvg)="([^"]*)"""", RegexOption.IGNORE_CASE)
-
-    /**
-     * Extracts the EPG feed URL(s) from an `#EXTM3U` header, e.g.
-     * `#EXTM3U x-tvg-url="https://example.com/guide.xml.gz"`. Some playlists
-     * list more than one, comma-separated.
-     */
-    fun extractEpgUrls(content: String): List<String> {
-        val headerLine = content.lineSequence().firstOrNull { it.isNotBlank() } ?: return emptyList()
-        if (!headerLine.startsWith("#EXTM3U")) return emptyList()
-        val match = epgUrlRegex.find(headerLine) ?: return emptyList()
-        return match.groupValues[1].split(",").map { it.trim() }.filter { it.isNotEmpty() }
-    }
 
     fun parse(content: String): List<Channel> {
         val channels = mutableListOf<Channel>()
@@ -44,7 +31,6 @@ object M3UParser {
         var pendingLicenseType: String? = null
         var pendingLicenseKey: String? = null
         var pendingManifestType: String? = null
-        var pendingTvgId: String? = null
         val seenIds = HashSet<String>()
 
         fun reset() {
@@ -56,7 +42,6 @@ object M3UParser {
             pendingLicenseType = null
             pendingLicenseKey = null
             pendingManifestType = null
-            pendingTvgId = null
         }
 
         while (lines.hasNext()) {
@@ -73,7 +58,6 @@ object M3UParser {
                     pendingCountry = attrMap["group-title"]?.ifBlank { null }
                     pendingUserAgent = attrMap["http-user-agent"]?.ifBlank { null }
                     pendingReferrer = attrMap["http-referrer"]?.ifBlank { null }
-                    pendingTvgId = attrMap["tvg-id"]?.ifBlank { null }
                 }
                 line.startsWith("#EXTVLCOPT") -> {
                     val match = vlcOptRegex.find(line) ?: continue
@@ -116,7 +100,6 @@ object M3UParser {
                             userAgent = pendingUserAgent,
                             referrer = pendingReferrer,
                             country = country,
-                            tvgId = pendingTvgId,
                             clearKeyLicenseJson = buildClearKeyJson(pendingLicenseType, pendingLicenseKey),
                             widevineLicenseUrl = widevine?.first,
                             widevineLicenseHeaders = widevine?.second ?: emptyMap(),

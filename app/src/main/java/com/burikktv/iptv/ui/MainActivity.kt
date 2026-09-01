@@ -50,7 +50,6 @@ class MainActivity : ComponentActivity() {
         setContent {
             BurikkTvTheme {
                 var playingChannel by remember { mutableStateOf<Channel?>(null) }
-                var nowPlaying by remember { mutableStateOf<String?>(null) }
                 var isMenuOpen by remember { mutableStateOf(false) }
                 // Guards the startup auto-play resolution below so it only
                 // ever runs once per app session, not every time the playlist
@@ -96,7 +95,6 @@ class MainActivity : ComponentActivity() {
                     val channel = playingChannel
                     if (channel != null) {
                         PlayerScreen(
-                            title = channel.name,
                             url = channel.streamUrl,
                             userAgent = channel.userAgent,
                             referrer = channel.referrer,
@@ -104,7 +102,6 @@ class MainActivity : ComponentActivity() {
                             widevineLicenseUrl = channel.widevineLicenseUrl,
                             widevineHeaders = channel.widevineLicenseHeaders,
                             forceDash = channel.forceDash,
-                            nowPlaying = nowPlaying,
                             onChangeChannel = { openOverlay(channel) },
                             showChangeChannelButton = !isMenuOpen,
                         )
@@ -131,9 +128,8 @@ class MainActivity : ComponentActivity() {
                         }
                         HomeScreen(
                             viewModel = viewModel,
-                            onPlayChannel = { selected, np ->
+                            onPlayChannel = { selected ->
                                 playingChannel = selected
-                                nowPlaying = np
                                 if (channel == null) {
                                     // First-ever selection, from the full-screen
                                     // menu (nothing was playing behind it) — hand
