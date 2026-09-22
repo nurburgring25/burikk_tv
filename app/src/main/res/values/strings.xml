@@ -26,4 +26,5 @@
     <string name="manage_playlists_empty">Belum ada playlist kustom yang ditambahkan.</string>
     <string name="manage_playlists_remove">Hapus</string>
     <string name="change_channel">Ganti Channel</string>
+    <string name="player_reconnecting">Mencoba menyambungkan ulang secara otomatis…</string>
 </resources>

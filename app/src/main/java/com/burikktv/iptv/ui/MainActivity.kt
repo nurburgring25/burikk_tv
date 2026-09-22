@@ -1,6 +1,7 @@
 package com.burikktv.iptv.ui
 
 import android.os.Bundle
+import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
@@ -28,6 +29,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.tv.material3.Button
@@ -47,6 +49,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Keeps the TV from dimming/entering its screensaver while the app is
+        // in the foreground; Android clears this automatically once the
+        // activity is paused/stopped, so it never overrides the system
+        // screensaver outside the app.
+        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContent {
             BurikkTvTheme {
                 var playingChannel by remember { mutableStateOf<Channel?>(null) }
@@ -78,8 +85,15 @@ class MainActivity : ComponentActivity() {
                     playingChannel = resumed ?: allChannels.first()
                 }
 
-                fun openOverlay(channel: Channel) {
-                    viewModel.selectCountry(channel.country)
+                // Deliberately leaves the ViewModel's selected category alone
+                // — it already holds whatever tab (a country, or Favorites)
+                // the now-playing channel was last picked from, and should
+                // stay there when the overlay reopens rather than being
+                // forced back to that channel's own country. That's what
+                // makes reopening the switcher after picking a channel from
+                // Favorites land back on Favorites, not on the channel's
+                // origin country.
+                fun openOverlay() {
                     isMenuOpen = true
                 }
 
@@ -102,7 +116,7 @@ class MainActivity : ComponentActivity() {
                             widevineLicenseUrl = channel.widevineLicenseUrl,
                             widevineHeaders = channel.widevineLicenseHeaders,
                             forceDash = channel.forceDash,
-                            onChangeChannel = { openOverlay(channel) },
+                            onChangeChannel = { openOverlay() },
                             showChangeChannelButton = !isMenuOpen,
                         )
                     } else if (!isMenuOpen) {
@@ -116,8 +130,13 @@ class MainActivity : ComponentActivity() {
                         // Docked to a fraction of the screen (not fillMaxSize)
                         // when overlaying live video, so the video stays clearly
                         // visible alongside the channel list instead of being
-                        // fully covered by it.
-                        val overlayModifier = if (channel != null) {
+                        // fully covered by it. On a phone-width screen a 60%
+                        // dock is too narrow to be usable, so the overlay takes
+                        // the full screen there instead (the video simply isn't
+                        // visible behind it while it's open, same as it isn't
+                        // on the pre-playback full-screen menu below).
+                        val isCompactWidth = LocalConfiguration.current.screenWidthDp < 600
+                        val overlayModifier = if (channel != null && !isCompactWidth) {
                             Modifier
                                 .align(Alignment.CenterEnd)
                                 .fillMaxHeight()

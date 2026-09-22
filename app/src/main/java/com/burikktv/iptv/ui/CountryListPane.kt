@@ -37,11 +37,12 @@ fun CountryListPane(
     onSelect: (String) -> Unit,
     modifier: Modifier = Modifier,
     isOverlay: Boolean = false,
+    fullWidth: Boolean = false,
 ) {
     Box(
         modifier = modifier
             .fillMaxHeight()
-            .width(300.dp)
+            .let { if (fullWidth) it.fillMaxWidth() else it.width(300.dp) }
             .background(
                 if (isOverlay) Color.Black.copy(alpha = 0.65f) else MaterialTheme.colorScheme.background,
             )

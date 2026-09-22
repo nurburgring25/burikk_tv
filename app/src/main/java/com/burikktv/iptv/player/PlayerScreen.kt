@@ -53,12 +53,27 @@ import androidx.tv.material3.MaterialTheme
 import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import com.burikktv.iptv.R
+import kotlinx.coroutines.delay
 
 private sealed interface PlaybackUiState {
     data object Buffering : PlaybackUiState
     data object Ready : PlaybackUiState
     data class Error(val message: String) : PlaybackUiState
 }
+
+// Errors within this many consecutive attempts are treated as a brief
+// network blip (Wi-Fi hiccup, a dropped TS segment, a stream server timeout)
+// and retried quickly behind the ordinary Buffering spinner, with no visible
+// error — most live-IPTV drops recover within a couple of seconds. Past that,
+// the NoSignalScreen is shown (so the user isn't left staring at an endless
+// spinner) but retries keep going in the background at a fixed slower
+// interval indefinitely, since the connection may come back at any point and
+// the user shouldn't have to manually back out and reselect the channel.
+private const val QUICK_RECONNECT_ATTEMPTS = 3
+private const val SLOW_RECONNECT_DELAY_MS = 30_000L
+
+private fun reconnectDelayMillis(attempt: Int): Long =
+    if (attempt <= QUICK_RECONNECT_ATTEMPTS) attempt * 2_000L else SLOW_RECONNECT_DELAY_MS
 
 @SuppressLint("OpaqueUnitKey")
 @Composable
@@ -76,6 +91,13 @@ fun PlayerScreen(
 ) {
     val context = LocalContext.current
     var uiState by remember(url) { mutableStateOf<PlaybackUiState>(PlaybackUiState.Buffering) }
+    // Counts consecutive playback errors since the last successful READY
+    // state; drives both the quick-vs-slow backoff below and the retry
+    // LaunchedEffect further down. Reset to 0 on a successful reconnect (and
+    // implicitly on a channel change, since it's keyed on `url`) so a later,
+    // unrelated drop gets its own fresh quick-retry window instead of
+    // inheriting a long-since-recovered stream's backoff.
+    var reconnectAttempt by remember(url) { mutableStateOf(0) }
     val changeChannelFocusRequester = remember { FocusRequester() }
 
     val exoPlayer = remember(url) {
@@ -189,14 +211,30 @@ fun PlayerScreen(
                 addListener(object : Player.Listener {
                     override fun onPlaybackStateChanged(playbackState: Int) {
                         uiState = when (playbackState) {
-                            Player.STATE_READY -> PlaybackUiState.Ready
-                            Player.STATE_BUFFERING -> PlaybackUiState.Buffering
+                            Player.STATE_READY -> {
+                                reconnectAttempt = 0
+                                PlaybackUiState.Ready
+                            }
+                            // Once a slow background retry is underway (past
+                            // QUICK_RECONNECT_ATTEMPTS), each retry's own
+                            // transient BUFFERING state is ignored so the
+                            // NoSignalScreen stays put instead of flashing a
+                            // spinner every ~30s only to reappear on the next
+                            // failure — it still switches straight to Ready
+                            // above the moment a retry actually succeeds.
+                            Player.STATE_BUFFERING ->
+                                if (uiState is PlaybackUiState.Error) uiState else PlaybackUiState.Buffering
                             else -> uiState
                         }
                     }
 
                     override fun onPlayerError(error: PlaybackException) {
-                        uiState = PlaybackUiState.Error(error.message ?: "Unknown playback error")
+                        reconnectAttempt++
+                        uiState = if (reconnectAttempt <= QUICK_RECONNECT_ATTEMPTS) {
+                            PlaybackUiState.Buffering
+                        } else {
+                            PlaybackUiState.Error(error.message ?: "Unknown playback error")
+                        }
                     }
                 })
                 prepare()
@@ -205,6 +243,19 @@ fun PlayerScreen(
 
     DisposableEffect(exoPlayer) {
         onDispose { exoPlayer.release() }
+    }
+
+    // Actually performs the reconnect: re-keyed on every attempt so a new
+    // error (which bumps reconnectAttempt again) cancels any still-pending
+    // wait from the previous one instead of stacking retries. re-calling
+    // prepare() on the same ExoPlayer instance re-requests the (live) HLS/DASH
+    // manifest from scratch, which is what actually recovers from a dropped
+    // connection or a request timeout — simply waiting does nothing on its
+    // own since a failed player stays in STATE_IDLE until told to reload.
+    LaunchedEffect(exoPlayer, reconnectAttempt) {
+        if (reconnectAttempt == 0) return@LaunchedEffect
+        delay(reconnectDelayMillis(reconnectAttempt))
+        exoPlayer.prepare()
     }
 
     Box(modifier = modifier.fillMaxSize().background(Color.Black)) {
@@ -342,6 +393,24 @@ fun PlayerScreen(
                 BackHandler(enabled = showErrorDetail) { showErrorDetail = false }
 
                 NoSignalScreen(modifier = Modifier.fillMaxSize())
+
+                // Reassures the user this isn't a dead end requiring them to
+                // back out manually — the LaunchedEffect above keeps retrying
+                // in the background for as long as this Error state is shown.
+                Surface(
+                    onClick = {},
+                    shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(8.dp)),
+                    colors = ClickableSurfaceDefaults.colors(
+                        containerColor = Color.Black.copy(alpha = 0.7f),
+                        contentColor = Color.White,
+                    ),
+                    modifier = Modifier.align(Alignment.TopCenter).padding(top = 32.dp),
+                ) {
+                    Text(
+                        text = stringResCompat(R.string.player_reconnecting),
+                        modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp),
+                    )
+                }
 
                 // PlayerView's native controller (and the "Ganti Channel"
                 // button embedded in it) is fully disabled during an error —

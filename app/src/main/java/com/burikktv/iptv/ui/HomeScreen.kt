@@ -1,5 +1,6 @@
 package com.burikktv.iptv.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -7,25 +8,40 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.tv.material3.Button
+import androidx.tv.material3.ClickableSurfaceDefaults
 import androidx.tv.material3.MaterialTheme
+import androidx.tv.material3.Surface
 import androidx.tv.material3.Text
 import com.burikktv.iptv.R
 import com.burikktv.iptv.data.model.Channel
 import com.burikktv.iptv.data.model.FAVORITES_KEY
 import com.burikktv.iptv.data.model.MANAGE_PLAYLISTS_KEY
 import com.burikktv.iptv.data.model.SEARCH_KEY
+
+/**
+ * Below this width, a side-by-side country list + content Row doesn't leave
+ * enough room for either pane (a phone in portrait is typically 360-430dp
+ * wide) — matches Material's compact/medium width class boundary.
+ */
+private const val COMPACT_WIDTH_BREAKPOINT_DP = 600
 
 @Composable
 fun HomeScreen(
@@ -76,15 +92,41 @@ fun HomeScreen(
                     }
                 }
 
-                Row(modifier = Modifier.fillMaxSize()) {
-                    CountryListPane(
-                        entries = entries,
-                        selectedKey = selectedKey,
-                        onSelect = viewModel::selectCountry,
-                        isOverlay = isOverlay,
-                    )
-                    if (selectedKey == SEARCH_KEY) {
-                        SearchPane(
+                val currentChannels = when (selectedKey) {
+                    FAVORITES_KEY, null -> favoriteChannels
+                    else -> state.channelsByCountry[selectedKey].orEmpty()
+                }
+                val emptyMessage = if (selectedKey == FAVORITES_KEY || selectedKey == null) {
+                    stringRes(R.string.no_favorites)
+                } else {
+                    stringRes(R.string.no_channels)
+                }
+
+                val isCompactWidth = LocalConfiguration.current.screenWidthDp < COMPACT_WIDTH_BREAKPOINT_DP
+
+                // Phone-portrait navigation: the country/category list and its
+                // content are two full-width screens instead of a side-by-side
+                // Row, since a phone-width Row would leave neither pane enough
+                // room. Reset to the list whenever the width class itself
+                // changes (e.g. a rotation crosses the breakpoint) so a stale
+                // drill-down state never strands the user on a screen that no
+                // longer applies. When opened as an overlay over an already
+                // playing channel, MainActivity has just pointed selectedKey
+                // at that channel's own country (see openOverlay), so this
+                // starts straight on that category's content instead of
+                // forcing the user back through the top-level category list
+                // every single time they open the channel switcher — including
+                // right after picking that channel from Favorites, since
+                // selectedKey by then reflects the channel's real country, not
+                // the Favorites tab it was originally picked from.
+                var showCategoryList by remember(isCompactWidth) { mutableStateOf(!isOverlay) }
+                BackHandler(enabled = isCompactWidth && !showCategoryList) {
+                    showCategoryList = true
+                }
+
+                val content: @Composable (Modifier) -> Unit = { contentModifier ->
+                    when (selectedKey) {
+                        SEARCH_KEY -> SearchPane(
                             query = searchQuery,
                             onQueryChange = viewModel::updateSearchQuery,
                             results = searchResults,
@@ -92,26 +134,15 @@ fun HomeScreen(
                             onPlay = onPlayChannel,
                             onToggleFavorite = { viewModel.toggleFavorite(it.id) },
                             compact = isOverlay,
-                            modifier = Modifier.padding(start = 4.dp),
+                            modifier = contentModifier,
                         )
-                    } else if (selectedKey == MANAGE_PLAYLISTS_KEY) {
-                        ManagePlaylistsPane(
+                        MANAGE_PLAYLISTS_KEY -> ManagePlaylistsPane(
                             playlistUrls = customPlaylistUrls.toList(),
                             onAdd = viewModel::addCustomPlaylist,
                             onRemove = viewModel::removeCustomPlaylist,
-                            modifier = Modifier.padding(start = 4.dp),
+                            modifier = contentModifier,
                         )
-                    } else {
-                        val currentChannels = when (selectedKey) {
-                            FAVORITES_KEY, null -> favoriteChannels
-                            else -> state.channelsByCountry[selectedKey].orEmpty()
-                        }
-                        val emptyMessage = if (selectedKey == FAVORITES_KEY || selectedKey == null) {
-                            stringRes(R.string.no_favorites)
-                        } else {
-                            stringRes(R.string.no_channels)
-                        }
-                        if (isOverlay) {
+                        else -> if (isOverlay) {
                             CompactChannelList(
                                 channels = currentChannels,
                                 favoriteIds = favoriteIds,
@@ -119,7 +150,7 @@ fun HomeScreen(
                                 onToggleFavorite = { viewModel.toggleFavorite(it.id) },
                                 emptyMessage = emptyMessage,
                                 currentChannelId = currentChannelId,
-                                modifier = Modifier.padding(start = 4.dp),
+                                modifier = contentModifier,
                             )
                         } else {
                             ChannelGrid(
@@ -128,13 +159,78 @@ fun HomeScreen(
                                 onPlay = onPlayChannel,
                                 onToggleFavorite = { viewModel.toggleFavorite(it.id) },
                                 emptyMessage = emptyMessage,
-                                modifier = Modifier.padding(start = 4.dp),
+                                modifier = contentModifier,
                             )
                         }
                     }
                 }
+
+                if (isCompactWidth) {
+                    if (showCategoryList) {
+                        CountryListPane(
+                            entries = entries,
+                            selectedKey = selectedKey,
+                            onSelect = { key ->
+                                viewModel.selectCountry(key)
+                                showCategoryList = false
+                            },
+                            isOverlay = isOverlay,
+                            fullWidth = true,
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    } else {
+                        Column(modifier = Modifier.fillMaxSize()) {
+                            CompactContentHeader(
+                                title = entries.firstOrNull { it.key == selectedKey }?.label.orEmpty(),
+                                onBack = { showCategoryList = true },
+                            )
+                            content(Modifier.weight(1f).fillMaxWidth())
+                        }
+                    }
+                } else {
+                    Row(modifier = Modifier.fillMaxSize()) {
+                        CountryListPane(
+                            entries = entries,
+                            selectedKey = selectedKey,
+                            onSelect = viewModel::selectCountry,
+                            isOverlay = isOverlay,
+                        )
+                        content(Modifier.padding(start = 4.dp))
+                    }
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun CompactContentHeader(title: String, onBack: () -> Unit) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 8.dp, vertical = 8.dp),
+    ) {
+        Surface(
+            onClick = onBack,
+            shape = ClickableSurfaceDefaults.shape(shape = androidx.compose.foundation.shape.RoundedCornerShape(8.dp)),
+            colors = ClickableSurfaceDefaults.colors(
+                containerColor = Color.Transparent,
+                contentColor = MaterialTheme.colorScheme.onSurface,
+            ),
+            modifier = Modifier.pointerInput(onBack) {
+                detectTapGestures(onTap = { onBack() })
+            },
+        ) {
+            Text(text = "←", modifier = Modifier.padding(10.dp), fontWeight = FontWeight.Bold)
+        }
+        Text(
+            text = title,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.padding(start = 8.dp).weight(1f),
+        )
     }
 }
 
